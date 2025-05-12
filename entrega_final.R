@@ -64,4 +64,6 @@ reajuste_anual <- df_salario_minimo %>%
   )
 
 
+# comentário teste
+
 
