@@ -1,69 +1,187 @@
 # ENTREGA FINAL: ECONOLAB 
-# GRUPO: AMANDA RIBEIRO, GUSTAVO MENDES, GUILHERME ROCCATO, LUÍS FELIPE YAMASHITAFUJI E PEDRO DUTRA
+# GRUPO: AMANDA RIBEIRO, GUSTAVO MENDES, GUILHERME ROCCATO, LU?S FELIPE YAMASHITAFUJI E PEDRO DUTRA
 
 
 # REPLICANDO A METODOLOGIA DO PAPER
 
-# PERÍODO: 2004 - 2023
+# PER?ODO: 2004 - 2023
 
-# EQUAÇÃO LINEAR, SEMELHANTE A UMA CURVA DE PHILLIPS 
-
-
-# Inicio do código
-
+install.packages("lmtest")
+install.packages("sandwich")
 
 # Carregar pacotes
 library(readxl)
 library(dplyr)
 library(lubridate)
-
+library(purrr)
+library(lmtest)
+library(sandwich)
 
 # Ler cada planilha
-df_2000_2010 <- read_excel("expectativa_inflacao_anual_2000_2010.xls", skip = 1) #dado anual 
-df_2011_2021 <- read_excel("expectativa_inflacao_anual_2011_2021.xls", skip = 1) #dado anual
-df_2022_2025 <- read_excel("expectativa_inflacao_anual_2022_2025.xls", skip = 1) #dado anual
 
 df_salario_minimo <- read_excel("salario_minimo.xlsx") #dado mensal
 
-df_hiato_produto <- read_excel("hiato_produto.xlsx")
-
+df_hiato_produto <- read_excel("hiato_produto.xlsx", skip = 8)
+ 
 df_ipca_servicos <- read_excel("ipca_servicos.xlsx") #dado mensal 
-names(df_ipca_servicos)[names(df_ipca_servicos) == "10844 - Índice Nacional de Preços ao Consumidor - Amplo (IPCA) - Serviços - Var. % mensal"] <- "ipca_servicos"  # renomeando a coluna do arquivo ipca servicos
+
+# df_2000_2010 <- read_excel("expectativa_inflacao_anual_2000_2010.xls", skip = 1) #dado anual 
+# df_2011_2021 <- read_excel("expectativa_inflacao_anual_2011_2021.xls", skip = 1) #dado anual
+# df_2022_2025 <- read_excel("expectativa_inflacao_anual_2022_2025.xls", skip = 1) #dado anual 
+# 
+# # Verifique os nomes das colunas e padronize, se necess?rio
+# names(df_2000_2010)
+# names(df_2011_2021)
+# names(df_2022_2025)
+# 
+# Unir os tr?s dataframes
+# df_unido <- bind_rows(df_2000_2010, df_2011_2021, df_2022_2025)
+# 
+# # resumo da estrutura dos nosso dados
+# # glimpse(df_unido)
+
+# DATAFRAME DE REAJUSTE ANUAL DO SALARIO MINIMO
+df_reajuste_anual <- df_salario_minimo %>%
+  # Renomear colunas
+  rename(data = 1, salario = 2) %>%
+  # Converter salÃ¡rio para numÃ©rico
+  mutate(salario = as.numeric(salario)) %>%
+  # Calcular variaÃ§Ã£o para todos os registros
+  mutate(variacao = c(NA, salario[2:n()] / salario[1:(n()-1)] * 100 - 100)) %>%
+  # Arredondar para duas casas decimais
+  mutate(variacao = round(variacao, 2)) %>%
+  # Filtrar anos entre 2004 e 2023
+  filter(year(data) >= 2004 & year(data) <= 2023) %>%
+  # Filtrar apenas onde hÃ¡ variaÃ§Ã£o
+  filter(!is.na(variacao) & variacao != 0) %>%
+  # Agrupar por ano e pegar o primeiro mÃªs com variaÃ§Ã£o
+  group_by(year(data)) %>%
+  slice_min(order_by = month(data), n = 1) %>%
+  ungroup() %>%
+  # Selecionar colunas finais
+  select(data, salario, variacao)
+
+#tail(df_reajuste_anual)
 
 
-# Verifique os nomes das colunas e padronize, se necessário
-names(df_2000_2010)
-names(df_2011_2021)
-names(df_2022_2025)
+# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS ULTIMOS 12 MESES
+# Preparar df_ipca_servicos2: converter datas e valores para formatos adequados
+df_ipca_servicos2 <- df_ipca_servicos %>%
+  # Renomear colunas para nomes mais simples
+  rename(Data = 1, ipca = 2) %>%
+  # Filtrar apenas linhas com Data contendo nÃºmeros inteiros (nÃºmeros seriais Excel)
+  filter(grepl("^[0-9]+$", Data)) %>%
+  # Converter Data para numÃ©rico (serial Excel)
+  mutate(Data = as.numeric(Data)) %>%
+  # Converter nÃºmero serial Excel para objeto Date do R
+  mutate(Data = as.Date(Data, origin = "1899-12-30")) %>%
+  # Converter ipca para numÃ©rico
+  mutate(ipca = as.numeric(ipca))
 
-# Unir os três dataframes
-df_unido <- bind_rows(df_2000_2010, df_2011_2021, df_2022_2025)
+#head(df_ipca_servicos2)
 
-# resumo da estrutura dos nosso dados
-# glimpse(df_unido)
-
-
-# filtrando o primeiro dia de cada mês
-df_filtrado <- df_unido %>%
-  mutate(Data = as.Date(Data),              # Converter para Date
-         Ano = year(Data), 
-         Mes = month(Data)) %>%             # Extrair ano e mês
-  group_by(Ano, Mes) %>%
-  slice_min(order_by = Data, n = 1) %>%     # Pega a primeira data do mês
-  ungroup()
-
-
-# calculando o reajuste salarial
-
-reajuste_anual <- df_salario_minimo %>%
-  filter(month(data) == 1) %>%             # filtra só janeiro
-  arrange(data) %>%                        # ordena por data
+# Calcular IPCA acumulado nos 12 meses anteriores para cada data de reajuste
+df_servicos12m_anteriores <- df_reajuste_anual %>%
   mutate(
-    ano = year(data),
-    reajuste_percentual = (`salario minimo` / lag(`salario minimo`) - 1) * 100
+    servicos12m = map_dbl(data, function(d) {
+      # Definir janela: do mÃªs 12 meses antes atÃ© o mÃªs imediatamente anterior a d
+      inicio <- d %m-% months(12)
+      fim <- d %m-% months(1)
+      
+      # Filtrar dados do IPCA dentro da janela temporal e calcular acumulado percentual
+      df_ipca_servicos2 %>%
+        filter(Data >= inicio, Data <= fim) %>%
+        summarise(acum = (prod(1 + ipca / 100) - 1) * 100) %>%
+        pull(acum)
+    })
+  ) %>%
+  # Selecionar colunas finais para o output
+  select(data, servicos12m) %>%
+  # Arredondar resultado para duas casas decimais
+  mutate(servicos12m = round(servicos12m, 2))
+
+#tail(df_servicos12m_anteriores)
+
+
+# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS 12 MESES FUTUROS
+df_servicos12m_posteriores <- df_reajuste_anual %>%
+  mutate(
+    servicos12m_adiante = map_dbl(data, function(d) {
+      # Janela: de d atÃ© (d + 11 meses) â€” 12 meses no total
+      inicio <- d
+      fim <- d %m+% months(11)
+      
+      # Filtrar dados do IPCA dentro da janela temporal e calcular acumulado percentual
+      df_ipca_servicos2 %>%
+        filter(Data >= inicio, Data <= fim) %>%
+        summarise(acum = (prod(1 + ipca / 100) - 1) * 100) %>%
+        pull(acum)
+    })
+  ) %>%
+  # Selecionar colunas finais
+  select(data, servicos12m_adiante) %>%
+  # Arredondar resultado para duas casas decimais
+  mutate(servicos12m_adiante = round(servicos12m_adiante, 2))
+
+#tail(df_servicos12m_posteriores)
+
+
+# DATAFRAME EXPECTATIVAS DE INFLACAO
+valores_expectativa <- c(
+  5.52, 5.69, 4.40, 3.84, 4.44, 4.91, 4.36, 5.60,
+  5.45, 5.42, 6.16, 6.60, 7.11, 4.79, 4.04, 3.34,
+  4.20, 4.12, 5.91, 5.45
+)
+
+df_expectativas <- df_reajuste_anual %>%
+  arrange(data) %>%
+  mutate(expectativa = valores_expectativa) %>%
+  select(data, expectativa)
+
+#tail(df_expectativas)
+
+
+# DATAFRAME DE HIATO DO PRODUTO
+# Preparar df_hiato_produto: renomear colunas e converter datas
+df_hiato_produto2 <- df_hiato_produto %>%
+  rename(data_hiato = Trimestre, hiato = `Hiato`) %>%
+  mutate(data_hiato = as.Date(data_hiato))
+
+# Combinar datas de reajuste com datas de hiato
+df_hiato <- df_reajuste_anual %>%
+  select(data) %>%
+  mutate(key = 1) %>%
+  inner_join(
+    df_hiato_produto2 %>% mutate(key = 1),
+    by = "key",
+    relationship = "many-to-many"
+  ) %>%
+  select(-key) %>%
+  # Filtrar apenas datas anteriores
+  filter(data_hiato < data) %>%
+  # Para cada data, pegar o hiato mais recente anterior
+  group_by(data) %>%
+  filter(data_hiato == max(data_hiato)) %>%
+  ungroup() %>%
+  select(data, hiato)
+
+#tail(df_hiato)
+
+
+# DATAFRAME ESPELHO DO RELATORIO DO BANCO CENTRAL
+df_relatorio_bc <- df_reajuste_anual %>%
+  left_join(df_servicos12m_anteriores, by = "data") %>%
+  left_join(df_servicos12m_posteriores, by = "data") %>%
+  left_join(df_expectativas, by = "data") %>%
+  left_join(df_hiato, by = "data")
+
+print(df_relatorio_bc)
+
+
+# ESTIMANDO MODELO
+modelo <- lm(
+  servicos12m_adiante ~ variacao + servicos12m + expectativa + hiato,
+  data = df_relatorio_bc
   )
 
-
-# comentário teste
-
-
+coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
