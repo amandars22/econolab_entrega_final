@@ -16,6 +16,7 @@ library(lubridate)
 library(purrr)
 library(lmtest)
 library(sandwich)
+library(ggplot2)
 
 # Ler cada planilha
 
@@ -185,3 +186,79 @@ modelo <- lm(
   )
 
 coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
+
+
+# GRAFICO
+# Preparar dados
+df_plot <- df_relatorio_bc %>%
+  mutate(ano = year(data))
+
+# Ajuste da regressão simples
+fit <- lm(servicos12m_adiante ~ variacao, data = df_plot)
+coef_int   <- coef(fit)[1]
+coef_slope <- coef(fit)[2]
+r2         <- summary(fit)$r.squared
+eq_label   <- paste0("y = ", round(coef_slope, 1),
+                     " x + ", round(coef_int,   1),
+                     "\nR² = ", round(r2,        2))
+
+# Valores mínimos e máximos para posicionar o label
+x_min <- min(df_plot$variacao)
+x_max <- max(df_plot$variacao)
+y_min <- min(df_plot$servicos12m_adiante)
+y_max <- max(df_plot$servicos12m_adiante)
+
+# Construção do gráfico
+ggplot(df_plot, aes(x = variacao, y = servicos12m_adiante)) +
+  
+  # Pontos e rótulos
+  geom_point(size = 3, color = "#2C3E50") +
+  geom_text(aes(label = ano), vjust = -1.2, size = 3.5, color = "#34495E") +
+  
+  # Linha de regressão pontilhada
+  geom_smooth(method = "lm", se = FALSE, linetype = "dotted", color = "#E74C3C") +
+  
+  # Anotação da equação e R²
+  annotate(
+    "text",
+    x    = x_min + 0.001 * (x_max - x_min),
+    y    = y_max - 0.05 * (y_max - y_min),
+    label= eq_label,
+    hjust= 0,
+    size = 4,
+    color= "#E74C3C"
+  ) +
+  
+  # Escalas com quebras principais e secundárias
+  scale_x_continuous(
+    breaks      = seq(floor(x_min), ceiling(x_max), by = 1),
+    minor_breaks= seq(floor(x_min), ceiling(x_max), by = 1),
+    expand      = expansion(mult = c(0.1, 0.1))
+  ) +
+  scale_y_continuous(
+    breaks      = seq(floor(y_min), ceiling(y_max), by = 1),
+    minor_breaks= seq(floor(y_min), ceiling(y_max), by = 1),
+    expand      = expansion(mult = c(0.1, 0.1))
+  ) +
+  
+  # Títulos e rótulos
+  labs(
+    title = "Variação do Salário Mínimo em t vs Inflação de Serviços de t a t+11 (%)",
+    x     = "Variação do Salário Mínimo em t (%)",
+    y     = "Inflação de serviços de t a t+11 (%)"
+  ) +
+  
+  # Tema com grades
+  theme_minimal(base_family = "sans", base_size = 12) +
+  theme(
+    panel.grid.major       = element_line(color = "gray80", size = 0.5),
+    panel.grid.minor       = element_line(color = "gray90", size = 0.3),
+    panel.grid.minor.y     = element_line(linetype = "dashed"),
+    panel.grid.minor.x     = element_line(linetype = "dashed"),
+    panel.grid.major.x     = element_line(linetype = "solid"),
+    panel.grid.major.y     = element_line(linetype = "solid"),
+    axis.ticks             = element_line(color = "gray50"),
+    plot.title             = element_text(face = "bold", size = 16, hjust = 0.5),
+    axis.title             = element_text(face = "bold", size = 14)
+  )
+
