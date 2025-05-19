@@ -272,7 +272,7 @@ ggplot(df_plot, aes(x = variacao, y = servicos12m_adiante)) +
 # CONTORNOS INDIVIDUAIS (ESTRESSANDO O MODELO) ---------
 
 
-# INCC (ÍNDICE NACIONAL DE CUSTO DA CONSTRUÇÃO) -----
+  # INCC (ÍNDICE NACIONAL DE CUSTO DA CONSTRUÇÃO) -----
 
 #Importando a base
 df_incc <- read_excel("incc-di.xls") #dados anuais (1945-2024)
@@ -282,10 +282,10 @@ df_incc<- df_incc %>%
   rename(data = 1, incc_di = 2)
 #Filtrando o período desejado (dados filtrado entre 2000 e 2024)
 df_incc_filtrado <- df_incc %>%
-  filter(data >= 2004 & data <= 2023)
+  filter(data >= 2004 & data <= 2024)
 #Arrendondando
 df_incc_filtrado <- df_incc_filtrado %>%
-  mutate(incc_di = round(incc_di, 4))
+  mutate(incc_di = round(incc_di, 2))
 
 #Adicionando uma nova métrica ao relatório BC (ou fazendo um novo relatório)
 
@@ -348,7 +348,7 @@ df_relatorio_bc_modificado <- df_relatorio_bc_modificado %>%
 
 # Os dados de ips começam a ser medido de 2011 até 2025 por isso fiz o novo corte
 df_relatorio_bc_modificado_ips <- df_relatorio_bc_modificado %>%
-  filter(ano >= 2011 & ano <= 2023)
+  filter(ano >= 2011 & ano <= 2024)
 
 print(df_relatorio_bc_modificado_ips)
 
