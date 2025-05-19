@@ -2,12 +2,15 @@
 # GRUPO: AMANDA RIBEIRO, GUSTAVO MENDES, GUILHERME ROCCATO, LU?S FELIPE YAMASHITAFUJI E PEDRO DUTRA
 
 
-# REPLICANDO A METODOLOGIA DO PAPER
+# REPLICANDO A METODOLOGIA DO PAPER ---------
+# Site de referência: https://www.bcb.gov.br/noticiablogbc/27/noticia
 
 # PER?ODO: 2004 - 2023
 
 install.packages("lmtest")
 install.packages("sandwich")
+install.packages("stringr")
+
 
 # Carregar pacotes
 library(readxl)
@@ -17,6 +20,8 @@ library(purrr)
 library(lmtest)
 library(sandwich)
 library(ggplot2)
+library(stringr)
+library(mFilter)
 
 # Ler cada planilha
 
@@ -41,7 +46,7 @@ df_ipca_servicos <- read_excel("ipca_servicos.xlsx") #dado mensal
 # # resumo da estrutura dos nosso dados
 # # glimpse(df_unido)
 
-# DATAFRAME DE REAJUSTE ANUAL DO SALARIO MINIMO
+# DATAFRAME DE REAJUSTE ANUAL DO SALARIO MINIMO ----------
 df_reajuste_anual <- df_salario_minimo %>%
   # Renomear colunas
   rename(data = 1, salario = 2) %>%
@@ -65,7 +70,7 @@ df_reajuste_anual <- df_salario_minimo %>%
 #tail(df_reajuste_anual)
 
 
-# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS ULTIMOS 12 MESES
+# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS ULTIMOS 12 MESES -------------
 # Preparar df_ipca_servicos2: converter datas e valores para formatos adequados
 df_ipca_servicos2 <- df_ipca_servicos %>%
   # Renomear colunas para nomes mais simples
@@ -104,7 +109,7 @@ df_servicos12m_anteriores <- df_reajuste_anual %>%
 #tail(df_servicos12m_anteriores)
 
 
-# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS 12 MESES FUTUROS
+# DATAFRAME DE INFLACAO DE SERVICOS ACUMULADA NOS 12 MESES FUTUROS -------------
 df_servicos12m_posteriores <- df_reajuste_anual %>%
   mutate(
     servicos12m_adiante = map_dbl(data, function(d) {
@@ -127,7 +132,7 @@ df_servicos12m_posteriores <- df_reajuste_anual %>%
 #tail(df_servicos12m_posteriores)
 
 
-# DATAFRAME EXPECTATIVAS DE INFLACAO
+# DATAFRAME EXPECTATIVAS DE INFLACAO ---------
 valores_expectativa <- c(
   5.52, 5.69, 4.40, 3.84, 4.44, 4.91, 4.36, 5.60,
   5.45, 5.42, 6.16, 6.60, 7.11, 4.79, 4.04, 3.34,
@@ -142,7 +147,7 @@ df_expectativas <- df_reajuste_anual %>%
 #tail(df_expectativas)
 
 
-# DATAFRAME DE HIATO DO PRODUTO
+# DATAFRAME DE HIATO DO PRODUTO ----------
 # Preparar df_hiato_produto: renomear colunas e converter datas
 df_hiato_produto2 <- df_hiato_produto %>%
   rename(data_hiato = Trimestre, hiato = `Hiato`) %>%
@@ -169,7 +174,7 @@ df_hiato <- df_reajuste_anual %>%
 #tail(df_hiato)
 
 
-# DATAFRAME ESPELHO DO RELATORIO DO BANCO CENTRAL
+# DATAFRAME ESPELHO DO RELATORIO DO BANCO CENTRAL ---------
 df_relatorio_bc <- df_reajuste_anual %>%
   left_join(df_servicos12m_anteriores, by = "data") %>%
   left_join(df_servicos12m_posteriores, by = "data") %>%
@@ -179,7 +184,7 @@ df_relatorio_bc <- df_reajuste_anual %>%
 print(df_relatorio_bc)
 
 
-# ESTIMANDO MODELO
+# ESTIMANDO MODELO --------
 modelo <- lm(
   servicos12m_adiante ~ variacao + servicos12m + expectativa + hiato,
   data = df_relatorio_bc
@@ -188,7 +193,7 @@ modelo <- lm(
 coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
 
 
-# GRAFICO
+# GRAFICO --------
 # Preparar dados
 df_plot <- df_relatorio_bc %>%
   mutate(ano = year(data))
@@ -262,3 +267,156 @@ ggplot(df_plot, aes(x = variacao, y = servicos12m_adiante)) +
     axis.title             = element_text(face = "bold", size = 14)
   )
 
+
+
+# CONTORNOS INDIVIDUAIS (ESTRESSANDO O MODELO) ---------
+
+
+# INCC (ÍNDICE NACIONAL DE CUSTO DA CONSTRUÇÃO) -----
+
+#Importando a base
+df_incc <- read_excel("incc-di.xls") #dados anuais (1945-2024)
+#Removendo linhas e renomeando colunas
+df_incc<- df_incc %>%
+  # Renomear colunas
+  rename(data = 1, incc_di = 2)
+#Filtrando o período desejado (dados filtrado entre 2000 e 2024)
+df_incc_filtrado <- df_incc %>%
+  filter(data >= 2004 & data <= 2023)
+#Arrendondando
+df_incc_filtrado <- df_incc_filtrado %>%
+  mutate(incc_di = round(incc_di, 4))
+
+#Adicionando uma nova métrica ao relatório BC (ou fazendo um novo relatório)
+
+#Renomeando a coluna para facilitar o join
+df_incc_filtrado <- df_incc_filtrado %>%
+  rename(ano = 1) %>% 
+  mutate(ano = as.numeric(ano))
+
+# Adicionando a coluna ano para que seja possível fazer o join
+df_relatorio_bc_modificado <- df_relatorio_bc %>%
+  mutate(data = ymd(data),
+         ano = year(data))     
+
+#Join feito
+df_relatorio_bc_modificado <- df_relatorio_bc_modificado %>% 
+  left_join(df_incc_filtrado, by = "ano")
+
+#Reordenando as colunas
+df_relatorio_bc_modificado <- df_relatorio_bc_modificado %>%
+  select(data, ano, everything())
+
+print(df_relatorio_bc_modificado)
+
+#Modelo com incc
+
+modelo <- lm(
+  servicos12m_adiante ~ variacao + incc_di + hiato,
+  data = df_relatorio_bc_modificado
+)
+
+coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
+
+
+
+# IPS (ÍNIDICE DE PREÇOS DE SERVIÇOS) [FERCOMERCIO-SP] -----
+
+#fonte (https://www.fecomercio.com.br/pesquisas/indice/ips)
+
+# Esse dados começaram a ser disponibilizados somente a partir de 2011
+
+# Preparação do excel
+
+df_ips <- read_excel("ips.xlsx") #mensal
+
+# Tranformando a primeira coluna em data e arredondando a segunda coluna para 2 casas decimais
+df_ips <- df_ips %>%
+  mutate(data = as.Date(data)) %>% 
+  mutate(ips = round(ips,2))
+
+#Acumulando anualmente os dados mensais
+df_ips_anual <- df_ips %>%
+  mutate(ano = year(data)) %>% 
+  group_by(ano) %>% 
+  summarise(ips_anual = (prod(1 + ips/100) - 1)*100) %>% 
+  mutate(ips_anual = round(ips_anual,2))
+
+# Join feito    
+df_relatorio_bc_modificado <- df_relatorio_bc_modificado %>% 
+  left_join(df_ips_anual, by = "ano")
+
+# Os dados de ips começam a ser medido de 2011 até 2025 por isso fiz o novo corte
+df_relatorio_bc_modificado_ips <- df_relatorio_bc_modificado %>%
+  filter(ano >= 2011 & ano <= 2023)
+
+print(df_relatorio_bc_modificado_ips)
+
+
+# Modelo com ips 
+
+modelo <- lm(
+  servicos12m_adiante ~ variacao + ips_anual + hiato,
+  data = df_relatorio_bc_modificado_ips
+)
+
+coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
+
+
+
+
+# Hiato do produto (utilizando PIB Industria) ---------
+
+
+#Importando base (excel com os dados) - Período entre 1947 e 2024 
+#Dado anual em milhões de reais
+#Fonte: IBGE
+
+pib <- read_excel("pib_industria.xls")  
+
+# Tratamentos iniciais: renomar as colunas e limitar o período ao analisado no estudo
+pib <- pib %>% 
+  rename(ano=1,pib_industria =2) %>% 
+  filter(ano >= 2000 & ano <= 2024 )
+
+# vetor do PIB 
+pib_valores <- pib$pib_industria
+
+# filtro HP (lambda = 100)
+hp <- hpfilter(pib_valores, freq = 100, type = "lambda")
+
+# PIB potencial (tendência)
+pib_potencial <- hp$trend
+
+# PIB ciclo (desvio do potencial)
+pib_ciclo <- hp$cycle
+
+hiato <- (pib_valores - pib_potencial) / pib_potencial * 100
+
+hiato_industria <- pib %>%
+  mutate(PIB_Potencial = pib_potencial,
+         Hiato = hiato) %>% 
+  mutate(ano = as.numeric(ano))
+
+print(hiato_industria)
+
+#Relatório incorporando a nova coluna
+
+df_relatorio_bc_hiato_industria <- df_relatorio_bc %>%
+  mutate(data = ymd(data),
+         ano = year(data)) 
+
+#Join feito
+df_relatorio_bc_hiato_industria <- df_relatorio_bc_hiato_industria %>% 
+  left_join(hiato_industria, by = "ano") %>% 
+  select(data, ano, everything()) 
+  
+
+
+# ESTIMANDO MODELO --------
+modelo <- lm(
+  servicos12m_adiante ~ variacao + servicos12m + expectativa + Hiato[,1],
+  data = df_relatorio_bc_hiato_industria
+)
+
+coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
