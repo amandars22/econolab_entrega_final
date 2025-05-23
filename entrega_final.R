@@ -205,7 +205,7 @@ coef_slope <- coef(fit)[2]
 r2         <- summary(fit)$r.squared
 eq_label   <- paste0("y = ", round(coef_slope, 1),
                      " x + ", round(coef_int,   1),
-                     "\nRÂ² = ", round(r2,        2))
+                     "\nR² = ", round(r2,        2))
 
 # Valores mÃ­nimos e mÃ¡ximos para posicionar o label
 x_min <- min(df_plot$variacao)
@@ -248,9 +248,9 @@ ggplot(df_plot, aes(x = variacao, y = servicos12m_adiante)) +
   
   # TÃ­tulos e rÃ³tulos
   labs(
-    title = "VariaÃ§Ã£o do SalÃ¡rio MÃ­nimo em t vs InflaÃ§Ã£o de ServiÃ§os de t a t+11 (%)",
-    x     = "VariaÃ§Ã£o do SalÃ¡rio MÃ­nimo em t (%)",
-    y     = "InflaÃ§Ã£o de serviÃ§os de t a t+11 (%)"
+    title = "Variação do Salário Mínimo em t vs Inflação de Serviços de t a t+11 (%)",
+    x     = "Variação do Salário Mínimo em t (%)",
+    y     = "Inflação de Salário de t a t+11 (%)"
   ) +
   
   # Tema com grades
@@ -272,7 +272,7 @@ ggplot(df_plot, aes(x = variacao, y = servicos12m_adiante)) +
 # CONTORNOS INDIVIDUAIS (ESTRESSANDO O MODELO) ---------
 
 
-  # INCC (ÍNDICE NACIONAL DE CUSTO DA CONSTRUÇÃO) -----
+# INCC (ÍNDICE NACIONAL DE CUSTO DA CONSTRUÇÃO) -----
 
 #Importando a base
 df_incc <- read_excel("incc-di.xls") #dados anuais (1945-2024)
@@ -413,10 +413,64 @@ df_relatorio_bc_hiato_industria <- df_relatorio_bc_hiato_industria %>%
   
 
 
-# ESTIMANDO MODELO --------
+# ESTIMANDO MODELO
 modelo <- lm(
   servicos12m_adiante ~ variacao + servicos12m + expectativa + Hiato[,1],
   data = df_relatorio_bc_hiato_industria
 )
 
 coeftest(modelo, vcov = NeweyWest(modelo, lag = 1, prewhite = FALSE))
+
+
+
+
+#CORRELAÇÃO ENTRE INFLAÇÃO-SP E INFLAÇÃO BR -------
+#Apoio para o índice do IPS Fecomércio
+
+
+#Inflação brasileira 
+
+ipca_br <- read_excel("inflacao_br.xls") %>%
+  rename( data = 1, var_ipca = 2) %>% 
+  filter(data>=2000 & data<=2024) %>% 
+  mutate(var_ipca = round(var_ipca,2))
+  
+
+# IPC (Inflação do município de São Paulo)
+ipc_fipe <- read_excel("ipc_sp.xls") %>%
+  rename( data = 1, ipc = 2) %>% 
+  filter(data>=2000 & data<=2024) %>% 
+  mutate(ipc = round(ipc,2))
+
+# Join das duas bases
+tabela_ipc_ipca <- left_join(ipca_br, ipc_fipe, by = "data")
+
+
+# Correlação
+correlacao <- cor(tabela_ipc_ipca$var_ipca, tabela_ipc_ipca$ipc)
+print(paste("Correlação: ", round(correlacao, 3)))
+
+# Gráfico de dispersão com linha de tendência
+ggplot(tabela_ipc_ipca, aes(x = var_ipca, y = ipc)) +
+  geom_point(color = "deeppink", size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "Correlação entre IPCA e IPC-Fipe",
+    subtitle = paste("Correlação de Pearson =", round(correlacao, 3)),
+    x = "Inflação Brasil (IPCA)",
+    y = "Inflação São Paulo (IPC-Fipe)"
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+
+
+
+
+
+
+
